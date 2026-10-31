@@ -22,7 +22,7 @@
 
 **现象**：HOME 类 APK 的拦截依赖 `apk_info()` 里的 `home` 字段，而这个字段是用 `aapt2 dump xmltree` 解析 `AndroidManifest.xml` 得到的。如果机器上找不到 aapt2：
 
-- `info["error"]` 会是「找不到 aapt2/aapt（仍可直接安装，只是看不到包名版本）」
+- `info["error"]` 会是「找不到 aapt2/aapt——可直接安装，但认不出 category.HOME，桌面类护栏会失效」
 - `info["home"]` 保持 `False`
 - `jobs._run()` 里的 `if meta.get("home") and not opts.get("allow_home")` 判断失效
 - **结果：桌面类 APK 会被直接装进去，可能变成第二个 HOME 候选，导致电视开机弹「选择桌面」**

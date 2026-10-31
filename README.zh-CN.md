@@ -76,12 +76,12 @@ python server.py --no-browser    # 不自动开浏览器
 | 通道 | 做法 | 经不经过电视的安装校验 | 典型场景 |
 |---|---|---|---|
 | `adb` | `adb install -r [-d] [-g]` | **不经过**：shell 直接提交安装会话，不触发 verifier | 首选，绝大多数第三方应用 |
-| `tcast` | TCL 多屏互动（`com.tcl.MultiScreenInteraction_TV`，TCP 6553）+ `adb reverse` + 本地 HTTP 供电视拉取，自动点电视上的「同意」 | **经过**：由系统安装器提交 | adb 通道不可用时的替代路径 |
+| `tcast` | TCL 多屏互动（`com.tcl.MultiScreenInteraction_TV`，TCP 6553）+ `adb reverse` + 本地 HTTP 供电视拉取，自动点电视上的「同意」 | **不经过**：多屏互动自己弹确认框、自己装完，不建 `PackageInstaller` 会话 | adb 通道不可用时的替代路径 |
 | `pm` | `adb push /data/local/tmp` + `pm install -r` | **不经过** | adb 流式安装异常时的兜底 |
 
 「自动」模式按 `adb → tcast → pm` 依次尝试。日志里能看到每一步的命令、原始输出，以及中文的失败原因（签名不一致、版本降级、存储不足、架构不匹配等）。
 
-> **`tcast` 的能力边界**：多屏互动以系统身份发起安装，但它仍然经过 `PackageInstaller` 会话，因此**会命中校验链**。装普通应用毫无问题；装**桌面类** APK 时，若包名不在白名单、签名又与当前桌面不一致，`tcast` 一样会被拦——这种情况只能先写白名单（见 [实施文档](docs/DEPLOYMENT.md)）或改用 `adb` 通道。把 `tcast` 当成「万能绕过」是常见误解。
+> **`tcast` 到底是什么**：电视端的「多屏互动」是个持 `INSTALL_PACKAGES` 的系统应用——它自己画确认框，点完「同意」就自己把包装上，**不创建 `PackageInstaller` 会话**，因此不会发出验证广播、策略链根本不会跑。它能装 `adb` 或电视 UI 装不上的包，靠的是这条不同的代码路径，不是什么技巧。`adb` / `pm` 同理。（置信度：3 条一致的观察，还缺 1 次对照实验，见[踩坑记录 P-04](docs/PITFALLS.md)。）
 
 ### 关于电视的安装校验
 
@@ -196,7 +196,7 @@ tv-installer/
 | [路线图与已知问题](docs/ROADMAP.md) | 版本规划、已发现未修复的缺陷、已规划增强、同类项目调研 | 想知道「还缺什么」的人 |
 | [更新日志](CHANGELOG.md) | 每个版本改了什么 | 升级前看一眼 |
 
-> 遇到「明明代码没改，行为却不对」的情况，先翻[踩坑记录](docs/PITFALLS.md)——里面有几条是**结论曾经写错、后来被实测推翻**的，包括 `aapt2` 缺失导致护栏失效、`InstallConfig` 格式写错导致校验整体失效、以及把 `tcast` 当成万能绕过。
+> 遇到「明明代码没改，行为却不对」的情况，先翻[踩坑记录](docs/PITFALLS.md)——里面有几条是**结论曾经写错、后来被实测推翻**的，包括 `aapt2` 缺失导致护栏失效、`InstallConfig` 格式写错导致校验整体失效、以及「`tcast` 会经过系统安装器所以也会被拦」。
 
 ## 许可
 

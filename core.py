@@ -241,7 +241,7 @@ def apk_info(path, serial=None):
 
     aapts = aapt_paths()
     if not aapts:
-        info["error"] = "找不到 aapt2/aapt（仍可直接安装，只是看不到包名版本）"
+        info["error"] = "找不到 aapt2/aapt——可直接安装，但认不出 category.HOME，桌面类护栏会失效"
         return info
     for aapt in aapts:
         try:

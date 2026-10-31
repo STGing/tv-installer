@@ -532,7 +532,7 @@ def main():
     if lan:
         print(f"  手机： http://{local_ip()}:{port}/    访问码 {cfg['pin']}")
     print(f"  adb：  {core.adb_path()}")
-    print(f"  aapt： {(core.aapt_paths() or ['未找到（仅影响 APK 信息展示）'])[0]}")
+    print(f"  aapt： {(core.aapt_paths() or ['未找到（桌面类护栏将失效，建议装上）'])[0]}")
     print("=" * 58)
     if open_browser:
         threading.Timer(0.8, lambda: webbrowser.open(f"http://127.0.0.1:{port}/")).start()

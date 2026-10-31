@@ -262,19 +262,20 @@ tasklist | findstr <上面查到的PID>
 **关于 `INSTALL_FAILED_VERIFICATION_FAILURE` 的判断顺序**（很容易走错方向）：
 
 ```text
-① 这次走的是哪条通道？
-   ├─ adb / pm → 理论上不会出现这个错。出现了说明广告的校验开关被打开了，
-   │             或者电视上装了第三种校验器，先看 logcat
-   └─ tcast    → 正常，它经过 PackageInstaller 会话，会被校验链拦
+① 先抓 logcat，看是谁在拒：logcat -d | grep -E "verifier|Strategy|InstallConfig"
+   ├─ 出现 StrategyService / launcherStrategy → 确认是校验链，往下走 ②
+   └─ 没有 → 不是这条链。本工具的 adb / pm / tcast 三条都不在链上，
+             这种错误更可能来自：商店/广告侧的校验开关、APK 签名方案、
+             或这台机器上另一处 hook（尚未查清）
 ② 这个 APK 声明 HOME 吗？（界面上会显示「桌面类」标签）
    ├─ 是 → 大概率是 launcherStrategy 拦的，两条路：
-   │         · 改用 adb 通道（它不经过校验）
-   │         · 或把包名加进电视白名单，见 8.6
+   │         · 把包名加进电视白名单，见 8.6
+   │         · 或改用 adb / tcast 通道（两条都不经安装器会话）
    └─ 否 → 不太可能是 launcherStrategy（它只对 HOME 包生效），
            查 blackListStrategy 是否被厂商下发了规则
 ```
 
-⚠️ 常见误区：**以为换成 `tcast` 就能绕过校验**。事实正好相反——`tcast` 是三条通道里**唯一**会经过校验链的，`adb` 才是不经过的那条。
+⚠️ 常见误区有**两个方向**：以为 `tcast` 有什么「绕过技巧」（其实是它压根不建安装器会话），以及反过来以为 `tcast` 一定会被拦（本仓库上一版文档就是这么写的，依据只有一句推断，没有实测）。判断依据是 logcat 里的拒绝者，不是通道名字。
 
 ### 8.4 多屏互动通道（tcast）
 

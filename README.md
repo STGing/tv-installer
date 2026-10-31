@@ -74,12 +74,12 @@ python server.py --no-browser    # don't open the browser
 | Channel | How it works | Goes through the TV's install check? | Typical use |
 |---|---|---|---|
 | `adb` | `adb install -r [-d] [-g]` | **No** — the shell submits the session directly, the verifier never fires | First choice, the vast majority of third-party apps |
-| `tcast` | TCL Multi-Screen (`com.tcl.MultiScreenInteraction_TV`, TCP 6553) + `adb reverse` + a local HTTP server the TV pulls from, auto-tapping *Allow* on screen | **Yes** — the system installer submits it | Fallback when adb is unavailable |
+| `tcast` | TCL Multi-Screen (`com.tcl.MultiScreenInteraction_TV`, TCP 6553) + `adb reverse` + a local HTTP server the TV pulls from, auto-tapping *Allow* on screen | **No** — Multi-Screen shows its own consent dialog and installs the file itself, no `PackageInstaller` session | Fallback when adb is unavailable |
 | `pm` | `adb push` to `/data/local/tmp` + `pm install -r` | **No** | Last resort when adb streaming install breaks |
 
 `auto` mode tries `adb → tcast → pm` in order. The log shows every command, its raw output, and a plain-language failure reason (signature mismatch, version downgrade, out of space, ABI mismatch, …).
 
-> **What `tcast` cannot do:** Multi-Screen installs as the system user, but it still goes through a `PackageInstaller` session, so **it hits the policy chain**. Fine for ordinary apps. For a **launcher-class** APK whose package is not whitelisted and whose signature differs from the current launcher, `tcast` is blocked exactly like everything else — that case needs a whitelist entry (see the [deployment guide](docs/DEPLOYMENT.md)) or the `adb` channel. Treating `tcast` as a universal bypass is a common misconception.
+> **What `tcast` actually is:** the TV-side Multi-Screen app is a system app holding `INSTALL_PACKAGES`; it draws its own consent dialog, then installs the file directly. No `PackageInstaller` session is created, so no verification broadcast is sent and the policy chain never runs — that, not some clever trick, is why it can install APKs that `adb` or the TV UI reject. The same logic explains `adb` and `pm`. (Confidence: three consistent observations, one control experiment still missing — see [PITFALLS P-04](docs/PITFALLS.md).)
 
 ### About the OEM install check
 
@@ -197,7 +197,7 @@ Everything lives under `http://127.0.0.1:8770`, JSON in and out (except download
 | [Roadmap & known issues](docs/ROADMAP.md) | release plan, open defects, planned enhancements, survey of similar projects | people wondering "what's missing" |
 | [Changelog](CHANGELOG.md) | what changed in each release | read before upgrading |
 
-> If behaviour looks wrong even though you changed nothing, start with the [pitfalls log](docs/PITFALLS.md) — several entries are **conclusions that were later disproved by measurement**, including "missing `aapt2` disables the guardrail", "a malformed `InstallConfig` silently disables the whole chain", and "`tcast` bypasses everything".
+> If behaviour looks wrong even though you changed nothing, start with the [pitfalls log](docs/PITFALLS.md) — several entries are **conclusions that were later disproved by measurement**, including "missing `aapt2` disables the guardrail", "a malformed `InstallConfig` silently disables the whole chain", and "`tcast` goes through the system installer, so it gets blocked too".
 
 ## License
 

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """channels — 三条安装通道。
 
-adb  : adb install -r [-d] [-g]        最快，常规范畴；shell 直接提交会话，不经过 verifier
-tcast: TCL 多屏互动 TCP 6553 推送      走系统安装器会话，等同用户手动点安装——
-                                       **会经过校验链**，不是绕过手段（详见 docs/PITFALLS.md P-04）
+adb  : adb install -r [-d] [-g]        最快；shell 直接 commit 会话，不产生验证广播
+tcast: TCL 多屏互动 TCP 6553 推送      电视端多屏互动自己弹确认框、自己装完，
+                                       不建 PackageInstaller 会话 → 同样不在校验链上（P-04）
 pm   : push /data/local/tmp + pm install  兜底；也支持安装电视上已有的 APK 文件
 """
 import hashlib
