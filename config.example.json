@@ -1,0 +1,14 @@
+{
+  "adb": null,
+  "last_ip": "",
+  "last_port": 5555,
+  "channel": "auto",
+  "auto_accept": true,
+  "allow_home": false,
+  "grant": false,
+  "downgrade": false,
+  "lan": false,
+  "http_port": 8770,
+  "pin": "",
+  "protected_extra": []
+}

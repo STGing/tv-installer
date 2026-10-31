@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="TV Installer">
+<title>TV Installer</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="icon" href="/icon-192.png">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <img src="/icon-192.png" alt="" class="logo">
+    <div>
+      <div class="t1">TV Installer</div>
+      <div class="t2" id="devLine">未连接电视</div>
+    </div>
+  </div>
+  <div class="top-actions">
+    <button class="pill" id="btnDevice"><span class="dot" id="devDot"></span><span id="devName">连接</span></button>
+    <button class="icon-btn" id="btnLog" title="日志">≡</button>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button data-tab="install" class="active">安装</button>
+  <button data-tab="apps">应用</button>
+  <button data-tab="files">文件</button>
+  <button data-tab="settings">设置</button>
+</nav>
+
+<main>
+  <!-- ================= 安装 ================= -->
+  <section class="page active" id="page-install">
+    <div class="card" id="connCard">
+      <div class="card-h"><span>电视连接</span><button class="ghost sm" id="btnRefreshDev">刷新状态</button></div>
+      <div class="row">
+        <input id="ip" type="text" inputmode="decimal" placeholder="电视 IP" autocomplete="off">
+        <input id="port" type="text" inputmode="numeric" placeholder="端口" class="w-port" value="5555">
+        <button class="primary" id="btnConnect">连接</button>
+      </div>
+      <div class="muted small" id="devMeta" style="margin-top:8px">电视需开启 ADB 调试（网络调试），并和电脑在同一 Wi-Fi</div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><span>选择 APK</span><span class="muted small" id="queueCount"></span></div>
+      <div class="drop" id="drop">
+        <div class="drop-ico">＋</div>
+        <div>点击选择，或把 APK 拖进来</div>
+        <div class="muted small">支持多选；文件会先传到电脑再安装</div>
+      </div>
+      <input type="file" id="file" accept=".apk,application/vnd.android.package-archive" multiple hidden>
+      <div id="queue"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><span>安装方式</span></div>
+      <label class="field">
+        <span>通道</span>
+        <select id="channel">
+          <option value="auto">自动（adb → 多屏互动 → pm）</option>
+          <option value="adb">仅 adb install</option>
+          <option value="tcast">仅 多屏互动（绕过 TCL 校验）</option>
+          <option value="pm">仅 push + pm install</option>
+        </select>
+      </label>
+      <div class="switch-grid">
+        <label class="ck"><input type="checkbox" id="optDowngrade"><span>允许降级</span></label>
+        <label class="ck"><input type="checkbox" id="optGrant"><span>自动授权限</span></label>
+        <label class="ck"><input type="checkbox" id="optHome"><span>允许装桌面类</span></label>
+        <label class="ck"><input type="checkbox" id="optAuto"><span>自动点「同意」</span></label>
+      </div>
+      <div class="actions">
+        <button class="primary grow" id="btnInstall" disabled>开始安装</button>
+        <button id="btnCancel">取消</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 应用 ================= -->
+  <section class="page" id="page-apps">
+    <div class="card">
+      <div class="card-h">
+        <span>已装第三方应用 <span class="muted small" id="appsCount"></span></span>
+        <button class="ghost sm" id="btnLoadApps">刷新</button>
+      </div>
+      <input id="appSearch" type="text" placeholder="搜索包名" class="search">
+      <div id="apps" class="list"><div class="empty">点「刷新」读取电视上的应用</div></div>
+    </div>
+  </section>
+
+  <!-- ================= 文件 ================= -->
+  <section class="page" id="page-files">
+    <div class="card">
+      <div class="card-h">
+        <span>电视文件</span>
+        <div class="row gap6">
+          <button class="ghost sm" id="btnUp">上级</button>
+          <button class="ghost sm" id="btnMkdir">新建文件夹</button>
+          <button class="ghost sm" id="btnFileRefresh">刷新</button>
+        </div>
+      </div>
+      <div class="crumbs mono" id="crumbs">/sdcard</div>
+      <div class="row" style="margin:8px 0">
+        <button class="primary grow" id="btnUpload">上传文件到此处</button>
+      </div>
+      <input type="file" id="fileUpload" hidden multiple>
+      <div id="files" class="list"><div class="empty">选择目录后显示文件</div></div>
+    </div>
+  </section>
+
+  <!-- ================= 设置 ================= -->
+  <section class="page" id="page-settings">
+    <div class="card">
+      <div class="card-h"><span>手机访问</span></div>
+      <div class="kv"><span>访问地址</span><code id="lanUrl" class="mono">—</code></div>
+      <div class="kv"><span>访问码</span><code id="pinCode" class="mono">—</code></div>
+      <div class="muted small" style="margin-top:8px">
+        手机连同一 Wi-Fi，用浏览器打开上面的地址并输入访问码；安卓 Chrome 可「添加到主屏幕」当 App 用。
+      </div>
+      <div class="actions"><button id="btnCopyUrl">复制地址</button></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><span>默认参数</span></div>
+      <label class="field"><span>电视 IP</span><input id="setIp" type="text" inputmode="decimal"></label>
+      <label class="field"><span>ADB 端口</span><input id="setPort" type="text" inputmode="numeric"></label>
+      <label class="field"><span>默认通道</span>
+        <select id="setChannel">
+          <option value="auto">自动降级</option>
+          <option value="adb">adb install</option>
+          <option value="tcast">多屏互动</option>
+          <option value="pm">push + pm</option>
+        </select>
+      </label>
+      <label class="field"><span>adb 路径</span><input id="setAdb" type="text" placeholder="留空自动查找"></label>
+      <div class="switch-grid">
+        <label class="ck"><input type="checkbox" id="setLan"><span>允许手机访问</span></label>
+        <label class="ck"><input type="checkbox" id="setAuto"><span>自动点「同意」</span></label>
+        <label class="ck"><input type="checkbox" id="setHome"><span>允许装桌面类</span></label>
+        <label class="ck"><input type="checkbox" id="setGrant"><span>自动授权限</span></label>
+      </div>
+      <div class="actions"><button class="primary grow" id="btnSave">保存设置</button></div>
+      <div class="muted small" style="margin-top:8px" id="setHint"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><span>关于</span></div>
+      <div class="muted small">
+        装应用走三条通道：<b>adb install</b> → <b>TCL 多屏互动 6553</b> → <b>push + pm install</b>。
+        撞上 <code class="mono">INSTALL_FAILED_VERIFICATION_FAILURE</code> 时会自动换通道。<br>
+        声明了 HOME 的包默认拦截，防止把电视桌面抢走。
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- 日志抽屉 -->
+<div class="drawer" id="drawer">
+  <div class="drawer-h">
+    <span>运行日志</span>
+    <div class="row gap6">
+      <button class="ghost sm" id="btnClearLog">清空</button>
+      <button class="ghost sm" id="btnCloseLog">收起</button>
+    </div>
+  </div>
+  <div class="log" id="log"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<nav class="bottom" id="bottom">
+  <button data-tab="install" class="active"><span>装</span>安装</button>
+  <button data-tab="apps"><span>应</span>应用</button>
+  <button data-tab="files"><span>文</span>文件</button>
+  <button data-tab="settings"><span>设</span>设置</button>
+</nav>
+
+<script src="/app.js"></script>
+</body>
+</html>

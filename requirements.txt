@@ -1,0 +1,5 @@
+# 本项目只使用 Python 标准库，没有第三方依赖。
+# 保留这个文件是为了显式说明这一点：pip install -r requirements.txt 不会安装任何包。
+#
+# 唯一的系统级依赖是 adb（Android Platform Tools），
+# 需要能在 PATH、ANDROID_HOME 或界面「设置」里找到。
