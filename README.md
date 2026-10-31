@@ -6,9 +6,9 @@
 
 ## 为什么需要它
 
-国产电视（TCL、雷鸟等）在系统安装器里做了定制校验：安装请求会先经过 `com.android.packageinstaller` 的 verifier，再按 TCL 下发的策略链（`InstallConfig`）逐条判断。声明了 `HOME` 的 APK、签名对不上的包、被云端列入黑名单的包，都会在电视上直接提示「禁止安装」，报错是 `INSTALL_FAILED_VERIFICATION_FAILURE`。
+国产电视（TCL、雷鸟等）在系统安装器里做了定制校验：安装请求会先经过 `com.android.packageinstaller` 的 verifier，再按厂商下发的策略链（TCL 上是 `InstallConfig`）逐条判断。声明了 `HOME` 的 APK、签名与当前桌面不一致的包、被列入黑名单的包，会在电视上直接提示「禁止安装」，报错是 `INSTALL_FAILED_VERIFICATION_FAILURE`。
 
-开源社区里的同类工具（couchkit、Android-TV-Desktop-Toolkit 等）本质都是一条 `adb install`，撞上这套校验只能失败。本项目内置三条安装通道并自动降级，把「装不上」的概率压到最低。
+开源社区里的同类工具（couchkit、Android-TV-Desktop-Toolkit 等）本质都是**一条 `adb install` 走天下**。`adb` 这条路确实不经过上述校验，所以它们对普通应用够用；但一旦 adb 本身走不通——签名冲突、流式安装中断、电视端只开了厂商推送通道而没开网络调试、或者你手上只有手机——它们就没有任何退路。本项目内置三条安装通道并自动降级，把「完全装不上」压缩成「慢一点但能装上」。
 
 ## 功能
 
@@ -30,7 +30,9 @@
    - 设置了 `ANDROID_HOME` / `ANDROID_SDK_ROOT` → 自动识别
    - 都没有 → 在界面「设置」里手填 `adb.exe` 的完整路径
 
-> 只需要 `adb`。`aapt2` 是可选的，没有它只是看不到 APK 的包名和版本号，不影响安装。
+> **`aapt2` 不是可选项，务必装上。** 它不只负责读包名和版本号——「桌面类 APK 拦截」这条护栏完全依赖它识别 `category.HOME`。缺了 `aapt2`，解析会退化，护栏**静默失效**（装第二个桌面也不会有任何提示）。
+>
+> 装 Android SDK 时自带，位于 `build-tools/<版本>/aapt2.exe`，不用单独配置；也可以用 `sdkmanager "build-tools;34.0.0"` 单独装。自检方法：启动服务后看 `/api/state` 里 `aapt` 字段是否为空。
 
 ### 电视端准备
 
@@ -61,25 +63,28 @@ python server.py --no-browser    # 不自动开浏览器
 
 ## 三条安装通道
 
-| 通道 | 做法 | 适用场景 |
-|---|---|---|
-| `adb` | `adb install -r [-d] [-g]` | 常规最快，绝大多数第三方应用 |
-| `tcast` | TCL 多屏互动（`com.tcl.MultiScreenInteraction_TV`，TCP 6553）+ `adb reverse` + 本地 HTTP 供电视拉取，自动点电视上的「同意」 | 撞上 `INSTALL_FAILED_VERIFICATION_FAILURE` 时绕过校验 |
-| `pm` | `adb push /data/local/tmp` + `pm install -r` | adb 流式安装异常时的兜底 |
+| 通道 | 做法 | 经不经过电视的安装校验 | 典型场景 |
+|---|---|---|---|
+| `adb` | `adb install -r [-d] [-g]` | **不经过**：shell 直接提交安装会话，不触发 verifier | 首选，绝大多数第三方应用 |
+| `tcast` | TCL 多屏互动（`com.tcl.MultiScreenInteraction_TV`，TCP 6553）+ `adb reverse` + 本地 HTTP 供电视拉取，自动点电视上的「同意」 | **经过**：由系统安装器提交 | adb 通道不可用时的替代路径 |
+| `pm` | `adb push /data/local/tmp` + `pm install -r` | **不经过** | adb 流式安装异常时的兜底 |
 
 「自动」模式按 `adb → tcast → pm` 依次尝试。日志里能看到每一步的命令、原始输出，以及中文的失败原因（签名不一致、版本降级、存储不足、架构不匹配等）。
 
+> **`tcast` 的能力边界**：多屏互动以系统身份发起安装，但它仍然经过 `PackageInstaller` 会话，因此**会命中校验链**。装普通应用毫无问题；装**桌面类** APK 时，若包名不在白名单、签名又与当前桌面不一致，`tcast` 一样会被拦——这种情况只能先写白名单（见 [实施文档](docs/DEPLOYMENT.md)）或改用 `adb` 通道。把 `tcast` 当成「万能绕过」是常见误解。
+
 ### 关于电视的安装校验
 
-实测结论（TCL 65T6L Pro / Android 11）：
+实测结论（TCL 65T6L Pro / MT5879 / Android 11）：
 
-- 校验链挂在 **PackageInstaller 的 verifier** 上，收到 `PACKAGE_NEEDS_VERIFICATION` 才跑
+- 校验链挂在 **PackageInstaller 的 verifier** 上，收到 `PACKAGE_NEEDS_VERIFICATION` 才跑，不装机就不跑
 - 由 `content://com.tcl.providers.config/InstallConfig` 下发的策略链控制，按 `priority 0→5` 执行，**第一条给出结论的策略就定局**
-- 其中 `launcherStrategy` 只对**声明了 `HOME` 的包**做签名比对，普通应用在这一层直接放行
-- 所以「某些 app 被禁止安装」通常指的是**桌面 / 启动器类** APK
-- `adb install` 走的是 shell 直接 commit session，**不触发这条 verifier**，因此能装进去
+- `launcherStrategy` 只对**声明了 `HOME` 的包**做判断，普通应用在这一层第一行就放行，走不到后面的 `pmStrategy`
+- 所以「某些 app 被禁止安装」通常指的是**桌面 / 启动器类** APK，而不是普通视频应用
+- `adb install` 走的是 shell 直接提交会话，**根本不触发这条 verifier**，这是它能装进去的真正原因
+- 这条链的配置本身有个坑：`config_content` 必须是**JSON 数组**，写成裸对象会导致整份策略静默失效（fail-open）。排查方法见 [踩坑记录](docs/PITFALLS.md)
 
-想深入了解可以看 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) 的「背景：OEM 安装校验」一节。
+完整机制、源码级逻辑与实测证据见 [开发文档 §8](docs/DEVELOPMENT.md#8-背景oem-安装校验tcl-实测)。
 
 ## 安全护栏
 
@@ -161,16 +166,27 @@ tv-installer/
 
 ## 已知限制
 
-- 必须能访问到 adb：工具本身不内置 platform-tools，需要本机已有。
-- 多屏互动通道依赖电视上的 `com.tcl.MultiScreenInteraction_TV` 在运行（TCL / 雷鸟自带），且电视不能处于深度休眠。
-- 不支持分包 APK（`.apks` / split APK）和 `.xapk`。
-- 应用列表只显示包名，不解析应用中文名（安装队列里的名字来自 APK 本身）。
+| 限制 | 说明 | 影响 |
+|---|---|---|
+| 缺 `aapt2` 时护栏失效 | 无法识别 `HOME` 声明，桌面类拦截静默放行 | ⚠️ 安全相关，务必装 |
+| 不内置 adb | 需本机已装 platform-tools，或在「设置」里指定路径 | 首次使用需准备 |
+| `tcast` 依赖多屏互动服务 | 需电视上 `com.tcl.MultiScreenInteraction_TV` 在运行，且电视不能深度休眠 | 先唤醒再推 |
+| 不支持分包 APK | `.apks` / split APK / `.xapk` 都不支持 | 部分商店提取包装不了 |
+| 应用列表无中文名 | 只显示包名；安装队列里才有中文名（来自 APK 自身） | 略影响辨认 |
+| 单设备、单任务 | 同一时刻只连一台电视、只跑一个安装任务 | 批量场景需排队 |
+| 局域网默认关闭 | 默认只监听 `127.0.0.1`，手机访问需在设置里开启并输入访问码 | 有意为之 |
 
 ## 文档
 
-- [开发文档](docs/DEVELOPMENT.md)：架构、模块职责、数据流、API 契约、扩展指南
-- [实施文档](docs/DEPLOYMENT.md)：环境准备、部署、验收清单、排错手册
-- [路线图与已知问题](docs/ROADMAP.md)：待办事项、已发现但未修复的问题
+| 文档 | 内容 | 适合谁读 |
+|---|---|---|
+| [开发文档](docs/DEVELOPMENT.md) | 架构、模块职责、线程模型、数据流、API 契约、OEM 校验机制、扩展指南 | 要改代码的人 |
+| [实施文档](docs/DEPLOYMENT.md) | 环境准备、部署、电视端配置、验收清单、排错手册、升级卸载 | 要部署 / 排查的人 |
+| [踩坑记录](docs/PITFALLS.md) | 开发与联调中真实踩过的坑，按「现象 → 根因 → 解决 → 教训」记录 | 遇到怪问题时先查这里 |
+| [路线图与已知问题](docs/ROADMAP.md) | 版本规划、已发现未修复的缺陷、已规划增强、同类项目调研 | 想知道「还缺什么」的人 |
+| [更新日志](CHANGELOG.md) | 每个版本改了什么 | 升级前看一眼 |
+
+> 遇到「明明代码没改，行为却不对」的情况，先翻[踩坑记录](docs/PITFALLS.md)——里面有几条是**结论曾经写错、后来被实测推翻**的，包括 `aapt2` 缺失导致护栏失效、`InstallConfig` 格式写错导致校验整体失效、以及把 `tcast` 当成万能绕过。
 
 ## 许可
 

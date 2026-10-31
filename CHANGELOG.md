@@ -4,11 +4,23 @@
 
 ## [Unreleased]
 
+### 文档
+
+- 新增[《踩坑记录》](docs/PITFALLS.md)：18 个真实踩过的坑，按「现象 → 根因 → 解决 → 教训」组织，并单列 5 条**被实测推翻的早期结论**
+- 重写[《开发文档》§8](docs/DEVELOPMENT.md)：补全 6 条策略链的逐条逻辑、三条通道与校验的关系矩阵、`config_content` 格式陷阱（数组 vs 对象）、白名单持久性边界、装完打不开的两条定制链
+- 修正三处**错误表述**：
+  - `aapt2` 曾被写作「可选组件」——实际是桌面类护栏的前提，缺失会 fail-open
+  - `tcast` 曾被写作「绕过校验的通道」——实际它走 `PackageInstaller`，是三条通道里**唯一**经过校验的
+  - `INSTALL_FAILED_VERIFICATION_FAILURE` 的处置建议从「换 tcast」改为按通道 + 是否 HOME 包分情况判断
+- [实施文档](docs/DEPLOYMENT.md)新增 8.6「装桌面类 APK：写电视白名单」，含状态确认、写入、回读、三条持久性边界
+- [路线图](docs/ROADMAP.md)同步 `InstallConfig` 格式问题为**已修复**，并纠正「等 OTA 会让格式变对」的因果倒置
+
 ### 计划中
 
 - 安装诊断：失败时自动采集 logcat、校验开关、策略链，给出定位结论
 - TCL 安装白名单管理界面（读写 `launcherStrategy.packages`，写入前自动备份）
 - 分包 APK（`.apks` / split）支持
+- `aapt2` 缺失时护栏改为 fail-closed（解析不确定就问，而不是默认放行）
 
 详见 [路线图](docs/ROADMAP.md)。
 

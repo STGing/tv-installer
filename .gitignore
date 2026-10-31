@@ -23,6 +23,10 @@ env/
 *.keystore
 *.log
 
+# 本地索引（只在 Tv/ 知识库里用，不进开源仓库）
+INDEX.md
+prototype/
+
 # 编辑器 / 系统
 .idea/
 .vscode/

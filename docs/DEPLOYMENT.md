@@ -41,9 +41,18 @@ export PATH="$ANDROID_HOME/platform-tools:$PATH"
 
 ### 2.2 关于 aapt2
 
-没有 aapt2 也能装，只是界面里看不到 APK 的包名、版本号、中文名，也无法自动判断「新装 / 更新 / 降级」，HOME 类护栏也不会生效（因为识别不出 HOME 声明）。
+**这不是可选组件，务必装上。** 原因不只是「看不到包名版本」：
 
-**强烈建议装上**。获取方式：装 Android SDK Build-Tools，或从 [Build-Tools 归档](https://dl.google.com/android/repository/build-tools_r34-windows.zip) 解压后把 `aapt2.exe` 所在目录加进 `PATH`。
+| 缺 aapt2 的后果 | 严重程度 |
+|---|---|
+| 看不到包名、版本号、中文名 | 影响体验 |
+| 无法判断「新装 / 更新 / 降级」 | 影响体验 |
+| **无法识别 `category.HOME` → 桌面类护栏静默失效** | ⚠️ 安全相关 |
+| **无法判断签名与已装版本是否一致** | 装到一半才报错 |
+
+护栏失效的具体表现：装一个桌面类 APK 不会有任何提示，直接装进去，然后电视开机弹「选择桌面」——而你完全不知道是这个工具放进去的。
+
+获取方式：装 Android SDK Build-Tools，或从 [Build-Tools 归档](https://dl.google.com/android/repository/build-tools_r34-windows.zip) 解压后把 `aapt2.exe` 所在目录加进 `PATH`。装完启动服务，确认 `/api/state` 返回的 `aapt` 字段不为 `null`。
 
 ## 3. 部署
 
@@ -239,7 +248,7 @@ tasklist | findstr <上面查到的PID>
 
 | 错误码 | 含义 | 处理 |
 |---|---|---|
-| `INSTALL_FAILED_VERIFICATION_FAILURE` | 电视的安装校验拒绝了 | 换「多屏互动」通道；或确认是不是桌面类 APK |
+| `INSTALL_FAILED_VERIFICATION_FAILURE` | 电视的安装校验拒绝了 | 先判断是不是桌面类 APK，见下方说明 |
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | 同包名不同签名 | 先在「应用」页卸载，再装 |
 | `INSTALL_PARSE_FAILED_INCONSISTENT_CERTIFICATES` | 同上 | 同上 |
 | `INSTALL_FAILED_VERSION_DOWNGRADE` | 版本更低 | 勾「允许降级」 |
@@ -249,6 +258,23 @@ tasklist | findstr <上面查到的PID>
 | `INSTALL_FAILED_USER_RESTRICTED` | 电视禁止未知来源 | 电视设置里允许「未知来源应用安装」 |
 | `INSTALL_PARSE_FAILED_NO_CERTIFICATES` | APK 未签名 | 重新下载官方包 |
 | `INSTALL_FAILED_INVALID_APK` | 包损坏 / 不完整 | 重新下载，对比文件大小 |
+
+**关于 `INSTALL_FAILED_VERIFICATION_FAILURE` 的判断顺序**（很容易走错方向）：
+
+```text
+① 这次走的是哪条通道？
+   ├─ adb / pm → 理论上不会出现这个错。出现了说明广告的校验开关被打开了，
+   │             或者电视上装了第三种校验器，先看 logcat
+   └─ tcast    → 正常，它经过 PackageInstaller 会话，会被校验链拦
+② 这个 APK 声明 HOME 吗？（界面上会显示「桌面类」标签）
+   ├─ 是 → 大概率是 launcherStrategy 拦的，两条路：
+   │         · 改用 adb 通道（它不经过校验）
+   │         · 或把包名加进电视白名单，见 8.6
+   └─ 否 → 不太可能是 launcherStrategy（它只对 HOME 包生效），
+           查 blackListStrategy 是否被厂商下发了规则
+```
+
+⚠️ 常见误区：**以为换成 `tcast` 就能绕过校验**。事实正好相反——`tcast` 是三条通道里**唯一**会经过校验链的，`adb` 才是不经过的那条。
 
 ### 8.4 多屏互动通道（tcast）
 
@@ -268,6 +294,45 @@ tcast 通道需要本机 `8765` 端口空闲（它要起一个临时 HTTP 服务
 | 目录列表为空 | 该路径不存在或没权限（如 `/data/data`） |
 | 上传失败 | 目标目录不可写；或文件超过电视剩余空间 |
 | 删除被拒 | 路径不在白名单里，属于设计限制 |
+
+### 8.6 装桌面类 APK：写电视白名单（进阶）
+
+只有在**「必须通过电视 UI / tcast 安装」+「APK 声明 HOME」+「签名与当前桌面不一致」**三个条件同时成立时才需要这一步。普通应用、以及走 `adb` 通道的安装，都不需要动电视配置。
+
+**先确认当前状态**（不做假设）：
+
+```bash
+# 策略链是否真的加载生效？必须以 [ 开头
+adb shell content query --uri content://com.tcl.providers.config/InstallConfig | head -c 120
+
+# 白名单里现在有哪些包
+adb shell content query --uri content://com.tcl.providers.config/InstallConfig | grep -o '"launcherStrategy"[^}]*}'
+
+# 配置库版本，与出厂一致才不会被重建
+adb shell content query --uri content://com.tcl.providers.config/Version
+```
+
+**写白名单**（用 `tools/tcl-system/tcl-cfg.sh`，别用 `content update`，它写不了 JSON）：
+
+```bash
+./tcl-cfg.sh --dump > ic.json            # 先导出备份
+./tcl-cfg.sh --json whitelist.json       # 写入（脚本会自动把裸对象包成数组）
+./tcl-cfg.sh --dump | head -c 40         # 回读，必须以 [ 开头
+```
+
+`whitelist.json` 的结构见 `tools/tcl-system/tcl-cfg/example-installconfig-whitelist.json`。
+
+**三条必须知道的边界**：
+
+| 事项 | 说明 |
+|---|---|
+| 普通重启不会丢 | 实测连续 3 次重启保留 |
+| 固件 OTA / 恢复出厂 / 清 `com.tcl.providers.config` 数据会丢 | 整库按出厂重建，白名单变回空 |
+| 写错格式（少了外层 `[]`）比不写更糟 | 整份配置不加载，校验链静默失效，且**开机日志里看不到报错** |
+
+判断「会不会被重建」只需比版本号：库里 `Version` 与 `/vendor/etc/default_feature_config.json` 里的 `Version` 相等即安全。
+
+> 这一步涉及电视系统配置，属于**有风险的操作**。动手前先 `--dump` 备份，出问题原样写回。原理与踩坑见 [踩坑记录 P-02](PITFALLS.md)。
 
 ## 9. 升级与卸载
 

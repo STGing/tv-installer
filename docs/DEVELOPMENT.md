@@ -290,61 +290,184 @@ for item in items:
 
 ## 8. 背景：OEM 安装校验（TCL 实测）
 
-这部分是本项目存在的理由，改通道逻辑前建议先看。
+这一节是本项目存在的理由。改通道逻辑之前必须先看——尤其是 8.4 那张「谁经过校验」的表，写错会导致排错方向完全跑偏。
 
-TCL 国行固件（MT5879 / Android 11）在三个位置做了定制：安装校验、开机桌面、第三方服务绑定。与安装相关的是第一个。
+TCL 国行固件（MT5879 / Android 11）在三个位置做了定制：**安装校验**、**开机桌面**、**第三方服务绑定**。与安装直接相关的是第一个；后两个决定了「装完为什么打不开 / 为什么开机弹选择框」，在 8.7 简述。
 
 ### 8.1 校验发生在哪
 
-`com.android.packageinstaller/.verifier.VerifierReciver` 接收 `PACKAGE_NEEDS_VERIFICATION` 广播，拉起 `StrategyService`，读 `content://com.tcl.providers.config/InstallConfig` 的 `config_content`，按策略链逐条执行。
+调用链（来自反编译与运行时日志）：
 
-### 8.2 策略链
-
-按 `priority` 升序执行，**第一个给出结论的策略定局**：
-
-```jsonc
-{
-  "enable": "true",
-  "strategies": [
-    {"name": "safeStrategy",      "enable": "true",  "priority": "0"},
-    {"name": "blackListStrategy", "enable": "true",  "packages": [], "priority": "1"},
-    {"name": "thridStrategy",     "enable": "false", "packages": ["com.dangbeimarket", "..."], "priority": "2"},
-    {"name": "launcherStrategy",  "enable": "true",  "packages": [], "priority": "3"},
-    {"name": "overDueStrategy",   "enable": "true",  "packages": [], "priority": "4"},
-    {"name": "pmStrategy",        "enable": "true",  "priority": "5"}
-  ]
-}
+```text
+安装请求（用户在电视上点 APK / 商店下载 / 多屏互动推送）
+   │
+   ├─→ PackageInstaller 创建安装会话，用户点「安装」
+   │        │
+   │        └─→ 发出 PACKAGE_NEEDS_VERIFICATION 广播
+   │                 │
+   │                 └─→ com.android.packageinstaller/.verifier.VerifierReciver
+   │                          ├─ 绑定 StrategyService
+   │                          ├─ 读 content://com.tcl.providers.config/InstallConfig
+   │                          └─ 按 priority 0→5 逐条跑策略
+   │                                   └─ 第一个 onCheckEnd() 的结论即最终结论
+   │
+   └─→ adb install / pm install（shell 直接提交会话，跳过上面整条链）
 ```
 
-各策略的作用：
+关键点：**它不是「装完再检查」，而是「装之前先问一遍」**。所以「禁止安装」的提示出现在进度条开始之前。
 
-- `blackListStrategy`：包名在 `packages` 里直接拒绝
-- `thridStrategy`：只放行系统应用或安装器发起的显式安装（出厂默认关闭）
-- `launcherStrategy`：**只对声明 HOME 的包生效**，逻辑等价于：
+### 8.2 策略链全貌
 
-  ```java
-  if (!mEnable) { onCheckEnd(true); return; }
-  if (!isLauncher()) { onCheckEnd(true); return; }        // 普通应用直接放行
-  if (mWhiteList.contains(pkg)) { onCheckEnd(true); return; }
-  if (isTclLauncher(pkg)) { onCheckEnd(true); return; }   // 与当前默认桌面同签名
-  onCheckEnd(false);
-  ```
+`InstallConfig.config_content` 的结构（出厂默认，`/vendor/etc/default_feature_config.json`）：
 
-- `pmStrategy`：识别 adb / pm 发起，一律拒绝
+```jsonc
+[
+  {
+    "enable": "true",
+    "strategies": [
+      {"name": "safeStrategy",      "enable": "true",  "priority": "0"},
+      {"name": "blackListStrategy", "enable": "true",  "packages": [],                    "priority": "1"},
+      {"name": "thridStrategy",     "enable": "false", "packages": ["com.dangbeimarket", "com.shafa.market", "com.mayi.tv"], "priority": "2"},
+      {"name": "launcherStrategy",  "enable": "true",  "packages": [],                    "priority": "3"},
+      {"name": "overDueStrategy",   "enable": "true",  "packages": [],                    "priority": "4"},
+      {"name": "pmStrategy",        "enable": "true",                                     "priority": "5"}
+    ]
+  }
+]
+```
 
-这解释了「为什么只有某些 app 被拦」：普通应用在 `launcherStrategy` 的第一行就放行定局了，压根走不到 `pmStrategy`；只有桌面类 APK 会进入签名比对并被拒。
+注意最外层是**数组**，里面套一个对象。这个细节在 8.5 会变成一个真实的坑。
 
-### 8.3 为什么 adb 能过
+### 8.3 逐条策略的真实逻辑
 
-`adb install` 走 shell 直接 commit session，**不经过 verifier**（`package_verifier_enable` / `verifier_verify_adb_installs` 为 0，且 TCL 的校验链只在带验证 token 的安装器会话里跑）。实测：一个声明 HOME、全新签名、全新包名的测试 APK，`adb install -r` 与 `--no-incremental` 均成功，日志里没有任何 verifier 拒绝记录。
+按 priority 升序，先命中先定局：
 
-同一个 APK 在电视上手动点安装，会被 `launcherStrategy` 拒绝。
+| 策略 | 出厂状态 | 逻辑 | 拦谁 |
+|---|---|---|---|
+| `safeStrategy` | 启用 | 白名单型放行，识别安全来源 | 一般放行，兜底 |
+| `blackListStrategy` | 启用（列表空） | 包名在 `packages` 里 → 拒绝 | 厂商拉黑的包 |
+| `thridStrategy` | **禁用** | 只放行系统应用 / 安装器发起的显式安装 | 第三方商店来源（出厂的开关就是关的） |
+| `launcherStrategy` | 启用 | **只对声明 HOME 的包生效**，见下 | 桌面 / 启动器类 APK |
+| `overDueStrategy` | 启用 | 过期 / 超期策略 | 少见 |
+| `pmStrategy` | 启用 | 识别 adb / pm 发起 → 一律拒绝 | 但实际到不了这里 |
 
-### 8.4 对开发的影响
+`launcherStrategy` 是唯一真正会误伤正常安装的一条，它的逻辑等价于：
 
-- adb 通道是首选，不要因为「怕被拦」就优先走 tcast
-- 「被禁止安装」的用户反馈，先判断是不是桌面类 APK（`meta.home == true`）
-- 真正需要绕过校验的场景，tcast 通道是备用路径
+```java
+if (!mEnable) { onCheckEnd(true); return; }                  // 策略关闭 → 放行
+if (!isLauncher()) { onCheckEnd(true); return; }             // 不是 HOME 应用 → 定局放行
+String pkg = ...;
+if (mWhiteList.contains(pkg)) { onCheckEnd(true); return; }   // 白名单命中 → 放行
+if (isTclLauncher(pkg)) { onCheckEnd(true); return; }         // 与「当前默认桌面」同签名 → 放行
+onCheckEnd(false);                                            // 其余一律拒绝
+```
+
+两个容易误解的地方：
+
+1. **`isLauncher()` 判断的是「这个 APK 是否声明了 `MAIN + HOME`」**，不是「它是不是桌面」。普通视频应用在这里就定局放行了，压根走不到签名比对。
+2. **`isTclLauncher()` 的比对对象不是硬编码的 `com.tcl.cyberui`**，而是先 `getHomeActivities()` 取「当前默认桌面」的包，取不到才回退到 cyberui。推论：**一旦自家桌面成为默认桌面，同签名的自家新版本天然通过校验**，不需要白名单。
+
+`pmStrategy` 虽然写着「拒绝 adb / pm」，但它在 priority 5，而 `launcherStrategy`（priority 3）对非 HOME 包早已放行定局——所以它实际几乎不生效。**这也是「为什么 adb 能装」的一个次要原因，但不是主因**，主因见 8.4。
+
+### 8.4 三条通道与校验的关系（最重要的一张表）
+
+| 通道 | 是否经过 verifier | 依据 | 后果 |
+|---|---|---|---|
+| `adb install` | **不经过** | shell 直接 commit 安装会话，不产生 `PACKAGE_NEEDS_VERIFICATION`；且 `verifier_verify_adb_installs=0` | 策略链完全影响不到它 |
+| `pm install`（push 后） | **不经过** | 同上 | 同上 |
+| `tcast`（多屏互动 6553） | **经过** | 由系统安装器创建会话，等同用户手动安装，只是「同意」被自动点了 | 桌面类 APK 仍会被 `launcherStrategy` 拦 |
+
+实测证据（2026-10-31，本机）：构造一个声明 `HOME`、包名全新、签名与任何桌面都不同的测试 APK，
+
+- `adb install -r` → `Success`，`logcat` 里没有任何 verifier 拒绝记录
+- `adb install --no-incremental -r` → 同样 `Success`
+- 同一份包在电视 UI 上点安装 → 被 `launcherStrategy` 拒绝
+
+所以正确的表述是：**「adb 能装」不是因为绕过了什么，而是根本不在那条链上**。`tcast` 才是「走正门、但把按门铃的手自动化了」。
+
+这一点直接决定了排错顺序（8.7）。
+
+### 8.5 隐藏陷阱：`config_content` 必须是 JSON 数组
+
+这是本项目开发过程中踩得最深的一个坑，值得单独记。
+
+`com.tcl.providers.config` 里所有 project 的 `config_content` 约定都是 **JSON 数组**（`IpelEngine` 是 `[{"name":"enable","value":"true"},…]`）。`InstallConfig` 只是碰巧内容是一整个对象，于是很容易被写成裸对象：
+
+```diff
+- {"enable":"true","strategies":[…]},              ← 错：裸对象
++ [{"enable":"true","strategies":[…]}]             ← 对：数组包对象
+```
+
+写成裸对象不会报错，也不会立刻有症状，它只会在**真正发生安装行为时**打一条日志：
+
+```text
+E Config:Grabber:InstallConfig: Exception: Value {"enable":"true","strategies":[...]}
+  of type org.json.JSONObject cannot be converted to JSONArray
+```
+
+后果是整份 `InstallConfig` 没被加载 → `launcherStrategy` 拿不到 `mEnable` 也拿不到 `mWhiteList` → **整条校验链静默失效（fail-open）**。表现是「什么都拦不住」，很容易被误判成「这台电视的校验本来就是关的」。
+
+更麻烦的是它的隐蔽性：这条日志**开机时不会出现**（`InstallConfig` 是安装流程按需读取的，不在开机加载的 44 个 project 里），只有装东西时才有一条 `E` 级日志，不主动 `grep` 就永远看不到。
+
+排查命令：
+
+```bash
+# 看库里存的格式（必须以 [ 开头）
+adb shell content query --uri content://com.tcl.providers.config/InstallConfig | head -c 120
+
+# 装一次东西之后抓这条日志
+adb logcat -d | grep 'Grabber:InstallConfig'
+# 正常：Currrent content from Db is ：[{"enable": "true", ...
+# 异常：Exception: Value {...} of type org.json.JSONObject cannot be converted to JSONArray
+```
+
+> 注：`content update --bind` 写不了这个字段——JSON 里的冒号会被 `column:type:value` 的解析规则拆坏，报 `[ERROR] Binding not well formed`。必须用 `app_process` 反射拿 `IContentProvider` 去 `update()`。
+
+### 8.6 白名单的持久性边界
+
+写入 `launcherStrategy.packages` 后，什么时候还在、什么时候会没：
+
+| 触发条件 | 结果 |
+|---|---|
+| 普通重启 / 关机再开 | ✅ 保留（实测连续 3 次重启，带假包名标记验证过） |
+| 固件 OTA 升级 / 恢复出厂 / 清 `com.tcl.providers.config` 数据 | ❌ 回到出厂默认（空列表） |
+| 云端下发更高版本的该 project | ❌ 可能被覆盖 |
+
+判断「现在会不会被重建」只需比一个版本号：
+
+```bash
+adb shell content query --uri content://com.tcl.providers.config/Version   # 本机
+grep -o '"Version": "[^"]*"' /vendor/etc/default_feature_config.json        # 出厂
+```
+
+两者相等 → 不会重建（`ConfigProvider` 只在「DB 版本落后或缺失」时才导入默认值）；固件升级后出厂版本号会变，那一刻整库重置。
+
+### 8.7 对开发与排错的影响
+
+**通道选择的优先级**：
+
+1. 普通应用 → `adb`，别绕远路
+2. 桌面类 APK → 先判断它是否在电视白名单里；不在的话 `tcast` 一样会被拦，此时要么写白名单，要么接受 `adb` 通道
+3. `tcast` 的正确定位是「adb 不可用时的替代路径」，不是「绕过校验的银弹」
+
+**用户报「装不上」时的判断顺序**：
+
+```text
+① meta.home == true ?           → 大概率是 launcherStrategy，指向白名单
+② 报错是 UPDATE_INCOMPATIBLE ?  → 签名冲突，与 TCL 无关，需先卸载
+③ 报错是 VERSION_DOWNGRADE ?    → 版本更低，开 -d 或换包
+④ 报错是 NO_MATCHING_ABIS ?     → 架构不符，无解
+⑤ 以上都不是，且电视上手动装也被拦 → 查 8.5 的格式问题
+```
+
+**装完打不开 / 开机异常**，那是另外两条定制链，不在安装校验范围内：
+
+| 现象 | 原因 | 关联 |
+|---|---|---|
+| 装完按 HOME 弹「选择桌面」 | 出现了第二个 HOME 候选 | 8.3 的 `isLauncher()` |
+| 换成非 `directBootAware` 的桌面后**卡开机动画** | TCL 在 user 0 解锁前就 resolve HOME，此时非 directBootAware 组件不可见 → `No home screen found` | 见 [PITFALLS P-07](PITFALLS.md) |
+| 桌面的守护服务起不来 | `canBindServiceGo()` 默认拒绝第三方绑定，需要 TCL 自定义 AppOps | 本项目不涉及 |
+
 
 ## 9. 扩展指南
 

@@ -29,6 +29,8 @@
 
 **影响面**：没装 Android SDK Build-Tools 的用户。
 
+**当前状态**：代码未改，仍为 fail-open；README 已把 `aapt2` 列为必需项并给出自检方法。复现步骤与教训见 [踩坑记录 P-01](PITFALLS.md)。
+
 **建议修复方向**：
 
 1. 识别不到 aapt2 时，把 `home` 标记为 `None`（未知），在 `jobs._run()` 里对未知状态要求显式确认，而不是默认放行；
@@ -37,41 +39,44 @@
 
 ---
 
-### P1 · TCL `InstallConfig` 的 `config_content` 格式异常
+### ✅ 已修复 · TCL `InstallConfig` 的 `config_content` 格式异常
 
-**位置**：电视侧，不是本项目代码。与本项目无直接依赖，但会影响「被禁止安装」类问题的判断。
+> **状态：2026-10-31 22:47 已修复**。保留这条记录，是因为它推翻了两个早期结论，对后续排查有参考价值。
 
-**现象**：抓电视 logcat 时能看到：
+**位置**：电视侧，不是本项目代码。
+
+**现象**：抓 logcat 能看到：
 
 ```
 E Config:Grabber:InstallConfig: Exception: Value {"enable":"true","strategies":[...]}
   of type org.json.JSONObject cannot be converted to JSONArray
 ```
 
-TCL 的 `Config:Grabber` 期望 `config_content` 是一个 **JSONArray**（对应出厂文件里的 `"content": [ {...} ]` 结构），但配置库里存的是一个 **JSONObject**（少了外层数组）。
+`Config:Grabber` 期望 `config_content` 是 **JSONArray**（对应出厂文件 `"content": [ {...} ]`），但库里存的是 **JSONObject**（少了外层数组）。
 
-**来源推断**：本机曾用脚本改写白名单（写 `launcherStrategy.packages`），写入时丢了外层数组。对照 `/vendor/etc/default_feature_config.json` 的原始格式：
+**后果**：整份 `InstallConfig` 没被加载 → `launcherStrategy` 从未构建 → **整条校验链静默失效（fail-open）**。表现是「什么都拦不住」，极易被误判成「这台电视本来就关着校验」。
 
-```json
-{
-  "content": [
-    { "enable": "true", "strategies": [ ... ] }
-  ],
-  "project": { "name": "InstallConfig", "type": "database" }
-}
+**修复**：把 `config_content` 补上外层 `[]`，与出厂结构对齐：
+
+```bash
+./tools/tcl-cfg.sh --json tools/tcl-cfg/installconfig-fixed-array.json
+./tools/tcl-cfg.sh --dump | head -c 40        # 必须以 [ 开头
 ```
 
-数据库里应该存 `content` 数组，实际存成了数组里的那个对象。
+修完与出厂逐字段比对：顶层类型、`enable`、6 条策略的结构全部一致，唯一差异是 `launcherStrategy.packages` 里多了两个自有桌面包名。重启复验 28s 起机、格式未被回写、配置库版本仍是 V1.134。
 
-**当前影响**：校验链加载失败，等于**安装校验处于关闭状态**（配合 `package_verifier_enable=0`，任何安装都不走 verifier）。所以现在装什么都没问题。
+**修复后的行为变化（要提前知道）**：格式对了，校验链就**真的生效**了。之后在电视 UI 上装「新桌面」，必须先把包名加进 `launcherStrategy.packages`——`adb install` 仍然不受影响。等于失去了之前「什么都不拦」的意外便利，换来符合出厂设计、可预期的行为。
 
-**潜在风险**：固件 OTA、恢复出厂、清 `com.tcl.providers.config` 数据时，配置库会按出厂默认重建（格式恢复正确），**校验链可能重新生效**，那时桌面类 APK 又会装不上。
+**顺带纠正两个错误推理**：
 
-**建议处理**：
+| 早期说法 | 实际情况 |
+|---|---|
+| 「等 OTA 把格式恢复正确，校验链就重新生效」 | 因果反了。格式是**当下就已经失效**；OTA 会**重建整库**，真正的损失是白名单被清空，与格式无关 |
+| 「OTA 后桌面类又装不上，说明格式问题埋了雷」 | 现象是真的，但原因是「重建一定清空白名单」这个早已记录的事实，不是格式 |
 
-1. 只需判断当前状态，不需要修：`adb shell content query --uri content://com.tcl.providers.config/InstallConfig`，看 `config_content` 是 `{` 还是 `[` 开头；
-2. 要恢复正确格式，把 `config_content` 写回 `[{...}]`（外层补数组），或直接 `pm clear com.tcl.providers.config` 让系统重建——**后者会丢白名单，且属于高危操作，务必先备份原值**；
-3. 处理前先记下原始 JSON，出问题能原样写回。
+判断「现在会不会被重建」只需比版本号：`content query .../Version` 与出厂 `default_feature_config.json` 里的 `Version` 相等即不会重建。
+
+完整复盘见 [踩坑记录 P-02](PITFALLS.md)。
 
 ---
 
