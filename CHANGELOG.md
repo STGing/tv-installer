@@ -8,7 +8,7 @@
 
 - README 拆成双语：`README.md`（英文，GitHub 默认展示）+ `README.zh-CN.md`（简体中文），两份顶部互相切换
 - 新增 `docs/screenshots/`：安装页与设置页的真实界面截图，两份 README 都内嵌展示
-- 新增[《踩坑记录》](docs/PITFALLS.md)：18 个真实踩过的坑，按「现象 → 根因 → 解决 → 教训」组织，并单列 5 条**被实测推翻的早期结论**
+- 新增[《踩坑记录》](docs/PITFALLS.md)：17 个真实踩过的坑，按「现象 → 根因 → 解决 → 教训」组织，并单列 5 条**被实测推翻的早期结论**
 - 重写[《开发文档》§8](docs/DEVELOPMENT.md)：补全 6 条策略链的逐条逻辑、三条通道与校验的关系矩阵、`config_content` 格式陷阱（数组 vs 对象）、白名单持久性边界、装完打不开的两条定制链
 - 修正三处**错误表述**：
   - `aapt2` 曾被写作「可选组件」——实际是桌面类护栏的前提，缺失会 fail-open
@@ -16,6 +16,12 @@
   - `INSTALL_FAILED_VERIFICATION_FAILURE` 的处置建议从「换 tcast」改为按通道 + 是否 HOME 包分情况判断
 - [实施文档](docs/DEPLOYMENT.md)新增 8.6「装桌面类 APK：写电视白名单」，含状态确认、写入、回读、三条持久性边界
 - [路线图](docs/ROADMAP.md)同步 `InstallConfig` 格式问题为**已修复**，并纠正「等 OTA 会让格式变对」的因果倒置
+- **一致性核对**（把文档与代码、与设备侧研究笔记逐条对照后修的四处矛盾）：
+  - `channels.py` 模块注释与界面「通道」选项仍写着 tcast「绕过 TCL 校验」——与 §8.4 已实测的结论相反，改为「走系统安装器会话，会经过校验链」
+  - [实施文档](docs/DEPLOYMENT.md)依赖表把 `aapt2` 标为「可选」，同一节正文却写「不是可选组件」，统一为**必需**
+  - 踩坑记录实为 **17 条**（此前多处写 18 条）；`tcl-65t6l-pro-notes.md` 实为 1979 行（此前写 1683 行）
+  - [开发文档](docs/DEVELOPMENT.md)「卡开机动画」的交叉引用指向 P-07（`pm disable-user`），实际应为 P-05（`directBootAware`）
+  - 发版前必查清单补入「双语 README 同步 / 截图重拍 / 占位符扫描 / git 身份」，并给出一次性隐私扫描命令
 
 ### 计划中
 
@@ -56,5 +62,5 @@
 
 见 [路线图 · 已知问题](docs/ROADMAP.md#已知问题)。其中需要优先注意的是「`aapt2` 缺失时 HOME 护栏失效」。
 
-[Unreleased]: https://github.com/<your-account>/tv-installer/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/<your-account>/tv-installer/releases/tag/v0.1.0
+[Unreleased]: https://github.com/STGing/tv-installer/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/STGing/tv-installer/releases/tag/v0.1.0

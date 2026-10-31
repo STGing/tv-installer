@@ -465,7 +465,7 @@ grep -o '"Version": "[^"]*"' /vendor/etc/default_feature_config.json        # �
 | 现象 | 原因 | 关联 |
 |---|---|---|
 | 装完按 HOME 弹「选择桌面」 | 出现了第二个 HOME 候选 | 8.3 的 `isLauncher()` |
-| 换成非 `directBootAware` 的桌面后**卡开机动画** | TCL 在 user 0 解锁前就 resolve HOME，此时非 directBootAware 组件不可见 → `No home screen found` | 见 [PITFALLS P-07](PITFALLS.md) |
+| 换成非 `directBootAware` 的桌面后**卡开机动画** | TCL 在 user 0 解锁前就 resolve HOME，此时非 directBootAware 组件不可见 → `No home screen found` | 见 [PITFALLS P-05](PITFALLS.md) |
 | 桌面的守护服务起不来 | `canBindServiceGo()` 默认拒绝第三方绑定，需要 TCL 自定义 AppOps | 本项目不涉及 |
 
 
@@ -563,3 +563,19 @@ git push origin main --tags
 - [ ] `config.json` 没有被提交
 - [ ] `python -m py_compile` 全过
 - [ ] 真机上至少完成一次「装 → 列表 → 卸载」闭环
+- [ ] **两份 README 都改过**：`README.md`（英文）与 `README.zh-CN.md`（中文）章节结构一一对应，只改一份等于制造两套事实
+- [ ] **截图与实际界面一致**：改过 `ui/` 就重拍 `docs/screenshots/`，拍法见 [`INDEX.md` 第 9.1 节](../INDEX.md)
+- [ ] **没有残留占位符**：`grep -rn "<your-account>\|<你的账号>\|TODO" --include="*.md" .`
+- [ ] **git 身份是你自己的**：`git config user.email`（占位邮箱推上去不会关联到账号）
+
+一次跑完的隐私扫描（提交前用）：
+
+```bash
+grep -rnE "([0-9]{1,3}\.){3}[0-9]{1,3}|[A-Za-z]:\\\\|/Users/|DESKTOP-|@[A-Za-z0-9.-]+\.[a-z]{2,}" \
+  --include="*.py" --include="*.md" --include="*.js" --include="*.json" --include="*.bat" . \
+  | grep -vE "127\.0\.0\.1|0\.0\.0\.0|192\.168\.1\.20|8\.8\.8\.8|@users\.noreply\.github\.com"
+```
+
+期望输出为空。有输出就逐条判断：是真的泄露，还是文档里的通用示例。
+
+> 为什么要单独列这三条：`aapt2` 的「可选 / 必需」在同一份文档里自相矛盾过、`<your-account>` 占位符跟着提交进了仓库、提交作者一度是本机 Windows 用户名。**这类问题的共同点是不会报错**，只能靠清单拦住。

@@ -206,5 +206,5 @@ E Config:Grabber:InstallConfig: Exception: Value {"enable":"true","strategies":[
 - 校验挂在 PackageInstaller 的 verifier，按 `priority 0→5` 执行策略链，第一个定局
 - `launcherStrategy` 只对声明 HOME 的包做签名比对，普通应用在它第一行就放行了
 - 所以「某些 app 被禁止安装」通常是桌面类 APK
-- `adb install` 走 shell commit session，不触发 verifier，能绕过
+- `adb install` 走 shell commit session，不产生 `PACKAGE_NEEDS_VERIFICATION`，**不在校验链上**（准确说法不是「绕过」，是「压根没走那条路」）
 - 以下设备级措施**验证无效**，不要浪费时间：`settings put global verifier_verify_adb_installs 0`（本来就是 0）、禁用 verifier 组件（shell 无权限）、`persist.tcl.debug.installapk`、`persist.sys.matrix.mi.enable`

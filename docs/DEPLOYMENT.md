@@ -14,7 +14,7 @@
 |---|---|---|
 | Python | 3.8 或更高 | `python --version` |
 | adb | Android Platform-Tools，任意较新版本 | `adb version` |
-| aapt2（可选） | 来自 Android SDK Build-Tools | `aapt2 version` |
+| aapt2（**必需**） | 来自 Android SDK Build-Tools | `aapt2 version` |
 | 网络 | 电脑与电视同一局域网，且未被 AP 隔离 | `ping <电视IP>` |
 | 端口 | 本机 `8770` 可用；用 tcast 通道还需 `8765` 可用 | 见下方「端口冲突」 |
 
@@ -59,7 +59,7 @@ export PATH="$ANDROID_HOME/platform-tools:$PATH"
 ### 3.1 获取代码
 
 ```bash
-git clone https://github.com/<你的账号>/tv-installer.git
+git clone https://github.com/STGing/tv-installer.git
 cd tv-installer
 ```
 
@@ -312,15 +312,18 @@ adb shell content query --uri content://com.tcl.providers.config/InstallConfig |
 adb shell content query --uri content://com.tcl.providers.config/Version
 ```
 
-**写白名单**（用 `tools/tcl-system/tcl-cfg.sh`，别用 `content update`，它写不了 JSON）：
+**写白名单**（用设备侧的 `tcast-push.py` 同目录下的 `tcl-cfg.sh`；**别用 `content update`，它写不了 JSON**）：
+
+> `tcl-cfg.sh` 不在本仓库里——它属于「设备研究」那条线，随具体固件调整。拿不到脚本也可以只用下面的 `content query` 手工核对状态；真要写，按 [开发文档 §8.2 的格式要求](DEVELOPMENT.md#82-策略链)自己拼 JSON 也行，但务必先备份。
 
 ```bash
+# 在存放 tcl-cfg.sh 的目录下执行
 ./tcl-cfg.sh --dump > ic.json            # 先导出备份
 ./tcl-cfg.sh --json whitelist.json       # 写入（脚本会自动把裸对象包成数组）
 ./tcl-cfg.sh --dump | head -c 40         # 回读，必须以 [ 开头
 ```
 
-`whitelist.json` 的结构见 `tools/tcl-system/tcl-cfg/example-installconfig-whitelist.json`。
+`whitelist.json` 就是完整的 `config_content` 数组，结构见 [开发文档 §8.2](DEVELOPMENT.md#82-策略链)。
 
 **三条必须知道的边界**：
 
