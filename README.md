@@ -1,139 +1,148 @@
 # TV Installer
 
-在电脑上给 Android TV / 电视盒子装第三方应用的本地工具。启动一个网页界面，拖入 APK 即可安装，**零第三方依赖**（Python 3.8+ 标准库 + 系统里的 adb）。
+**English** | [简体中文](README.zh-CN.md)
 
-> A local web UI for sideloading APKs to Android TV over ADB, with automatic multi-channel fallback for OEM install restrictions (TCL / 雷鸟等).
+A local web UI for sideloading APKs onto Android TV and TV boxes. Start it, drag an APK onto the page, done — **zero third-party dependencies** (Python 3.8+ standard library plus the `adb` already on your machine).
 
-## 为什么需要它
+## Why this exists
 
-国产电视（TCL、雷鸟等）在系统安装器里做了定制校验：安装请求会先经过 `com.android.packageinstaller` 的 verifier，再按厂商下发的策略链（TCL 上是 `InstallConfig`）逐条判断。声明了 `HOME` 的 APK、签名与当前桌面不一致的包、被列入黑名单的包，会在电视上直接提示「禁止安装」，报错是 `INSTALL_FAILED_VERIFICATION_FAILURE`。
+Chinese-market TVs (TCL, FFALCON and friends) customise the system package installer. An install request first hits the verifier in `com.android.packageinstaller`, then gets evaluated against a vendor policy chain (`InstallConfig` on TCL), strategy by strategy. APKs that declare `HOME`, are signed differently from the current launcher, or land on a blacklist are rejected on the TV with *"Install blocked"* — the error surfaces as `INSTALL_FAILED_VERIFICATION_FAILURE`.
 
-开源社区里的同类工具（couchkit、Android-TV-Desktop-Toolkit 等）本质都是**一条 `adb install` 走天下**。`adb` 这条路确实不经过上述校验，所以它们对普通应用够用；但一旦 adb 本身走不通——签名冲突、流式安装中断、电视端只开了厂商推送通道而没开网络调试、或者你手上只有手机——它们就没有任何退路。本项目内置三条安装通道并自动降级，把「完全装不上」压缩成「慢一点但能装上」。
+Open-source alternatives (couchkit, Android-TV-Desktop-Toolkit, …) are essentially *`adb install` with a UI*. adb does bypass the chain, so they are fine for ordinary apps. But once adb itself is unavailable — signature conflict, aborted streaming install, a TV that only exposes the vendor push channel, or a phone with no cable — they have no fallback at all. This project ships three install channels with automatic degradation, turning "I can't install it at all" into "slower, but it works".
 
-## 功能
+## Screenshots
 
-| 模块 | 能力 |
+<p align="center"><img src="docs/screenshots/ui-install.png" alt="Install tab: device connection, APK drop zone, install options" width="820"></p>
+
+<p align="center"><img src="docs/screenshots/ui-settings.png" alt="Settings tab: phone access, defaults, safety switches" width="820"></p>
+
+> These are the real UI served by `python server.py` (1280 px wide, idle state with no TV connected). Desktop and phone share the same page; below 820 px the tab bar moves to the bottom.
+
+## Features
+
+| Module | What it does |
 |---|---|
-| 安装 | 拖拽 / 多选 APK、批量队列、实时日志（SSE）、自动识别 **新装 / 更新 / 降级 / 重装** |
-| 通道 | `adb install` → TCL 多屏互动 6553 → `push + pm install`，失败自动降级，也可手动指定 |
-| 应用 | 列出第三方应用（版本号、更新时间）、启动、强制停止、清数据、卸载、导出 APK 到电脑 |
-| 文件 | 浏览电视目录、上传、下载、重命名、删除、新建文件夹、**直接安装电视上已有的 APK** |
-| 设置 | 默认 IP / 端口 / 通道、adb 路径、自动点「同意」、允许装桌面类、局域网访问开关 |
+| Install | Drag-and-drop / multi-select APKs, batched queue, live log over SSE, automatic detection of **fresh install / update / downgrade / reinstall** |
+| Channels | `adb install` → TCL Multi-Screen 6553 → `push + pm install`, with automatic fallback on failure and manual override |
+| Apps | List third-party apps (version, update time), launch, force-stop, clear data, uninstall, export the APK back to your computer |
+| Files | Browse TV directories, upload, download, rename, delete, create folders, and **install an APK that already lives on the TV** |
+| Settings | Default IP / port / channel, adb path, auto-accept on the TV, allow launcher-class APKs, LAN access toggle |
 
-## 快速开始
+## Quick start
 
-### 前置条件
+### Prerequisites
 
-1. **Python 3.8+**（Windows 安装时勾选 `Add Python to PATH`）
-2. **adb**（Android Platform Tools）。可以装 [Android SDK Platform-Tools](https://developer.android.com/studio/releases/platform-tools)，也可以直接用你已有的 adb：
-   - 已加入 `PATH` → 自动识别
-   - 设置了 `ANDROID_HOME` / `ANDROID_SDK_ROOT` → 自动识别
-   - 都没有 → 在界面「设置」里手填 `adb.exe` 的完整路径
+1. **Python 3.8+** (on Windows, tick *Add Python to PATH* during setup)
+2. **adb** (Android Platform Tools). Install [Android SDK Platform-Tools](https://developer.android.com/studio/releases/platform-tools) or reuse an existing adb:
+   - already on `PATH` → detected automatically
+   - `ANDROID_HOME` / `ANDROID_SDK_ROOT` set → detected automatically
+   - neither → paste the full path to `adb.exe` under **Settings** in the UI
 
-> **`aapt2` 不是可选项，务必装上。** 它不只负责读包名和版本号——「桌面类 APK 拦截」这条护栏完全依赖它识别 `category.HOME`。缺了 `aapt2`，解析会退化，护栏**静默失效**（装第二个桌面也不会有任何提示）。
+> **`aapt2` is not optional — please install it.** It does more than read package names and versions: the launcher-class guardrail depends entirely on it to detect `category.HOME`. Without `aapt2` the parse degrades and that guardrail **silently fails open** (a second launcher gets installed with no warning at all).
 >
-> 装 Android SDK 时自带，位于 `build-tools/<版本>/aapt2.exe`，不用单独配置；也可以用 `sdkmanager "build-tools;34.0.0"` 单独装。自检方法：启动服务后看 `/api/state` 里 `aapt` 字段是否为空。
+> The Android SDK ships it at `build-tools/<version>/aapt2.exe`, so no extra setup is needed; you can also install just that piece with `sdkmanager "build-tools;34.0.0"`. To check: start the server and look at the `aapt` field of `/api/state` — it should not be empty.
 
-### 电视端准备
+### Prepare the TV
 
-1. 电视和电脑连**同一个 Wi-Fi**
-2. 打开开发者选项：设置 → 关于 → 版本号连点 5~7 次
-3. 打开 **ADB 调试 / 网络调试**（不同机型叫法不同）
-4. 记下电视的 IP：设置 → 网络 → 当前连接详情
+1. Put the TV and the computer on the **same Wi-Fi**
+2. Enable developer options: Settings → About → tap *Build* 5–7 times
+3. Turn on **ADB debugging / network debugging** (the name varies by model)
+4. Note the TV's IP: Settings → Network → current connection
 
-### 运行
+### Run
 
 ```bash
-# Windows：双击
+# Windows: just double-click
 start.bat
 
-# 或者手动
+# or run it manually
 python server.py
 ```
 
-浏览器会自动打开 `http://127.0.0.1:8770/`。填电视 IP → 点「连接」→ 把 APK 拖进虚线框 → 「开始安装」。
+Your browser opens `http://127.0.0.1:8770/` automatically. Enter the TV IP → **Connect** → drop an APK into the dashed box → **Start install**.
 
-常用参数：
+Useful flags:
 
 ```bash
-python server.py --port 8780     # 端口被占用时换一个
-python server.py --local         # 只监听 127.0.0.1（默认行为）
-python server.py --no-browser    # 不自动开浏览器
+python server.py --port 8780     # when the port is taken
+python server.py --local         # listen on 127.0.0.1 only (default)
+python server.py --no-browser    # don't open the browser
 ```
 
-## 三条安装通道
+## The three install channels
 
-| 通道 | 做法 | 经不经过电视的安装校验 | 典型场景 |
+| Channel | How it works | Goes through the TV's install check? | Typical use |
 |---|---|---|---|
-| `adb` | `adb install -r [-d] [-g]` | **不经过**：shell 直接提交安装会话，不触发 verifier | 首选，绝大多数第三方应用 |
-| `tcast` | TCL 多屏互动（`com.tcl.MultiScreenInteraction_TV`，TCP 6553）+ `adb reverse` + 本地 HTTP 供电视拉取，自动点电视上的「同意」 | **经过**：由系统安装器提交 | adb 通道不可用时的替代路径 |
-| `pm` | `adb push /data/local/tmp` + `pm install -r` | **不经过** | adb 流式安装异常时的兜底 |
+| `adb` | `adb install -r [-d] [-g]` | **No** — the shell submits the session directly, the verifier never fires | First choice, the vast majority of third-party apps |
+| `tcast` | TCL Multi-Screen (`com.tcl.MultiScreenInteraction_TV`, TCP 6553) + `adb reverse` + a local HTTP server the TV pulls from, auto-tapping *Allow* on screen | **Yes** — the system installer submits it | Fallback when adb is unavailable |
+| `pm` | `adb push` to `/data/local/tmp` + `pm install -r` | **No** | Last resort when adb streaming install breaks |
 
-「自动」模式按 `adb → tcast → pm` 依次尝试。日志里能看到每一步的命令、原始输出，以及中文的失败原因（签名不一致、版本降级、存储不足、架构不匹配等）。
+`auto` mode tries `adb → tcast → pm` in order. The log shows every command, its raw output, and a plain-language failure reason (signature mismatch, version downgrade, out of space, ABI mismatch, …).
 
-> **`tcast` 的能力边界**：多屏互动以系统身份发起安装，但它仍然经过 `PackageInstaller` 会话，因此**会命中校验链**。装普通应用毫无问题；装**桌面类** APK 时，若包名不在白名单、签名又与当前桌面不一致，`tcast` 一样会被拦——这种情况只能先写白名单（见 [实施文档](docs/DEPLOYMENT.md)）或改用 `adb` 通道。把 `tcast` 当成「万能绕过」是常见误解。
+> **What `tcast` cannot do:** Multi-Screen installs as the system user, but it still goes through a `PackageInstaller` session, so **it hits the policy chain**. Fine for ordinary apps. For a **launcher-class** APK whose package is not whitelisted and whose signature differs from the current launcher, `tcast` is blocked exactly like everything else — that case needs a whitelist entry (see the [deployment guide](docs/DEPLOYMENT.md)) or the `adb` channel. Treating `tcast` as a universal bypass is a common misconception.
 
-### 关于电视的安装校验
+### About the OEM install check
 
-实测结论（TCL 65T6L Pro / MT5879 / Android 11）：
+Measured on a TCL 65T6L Pro (MT5879 / Android 11):
 
-- 校验链挂在 **PackageInstaller 的 verifier** 上，收到 `PACKAGE_NEEDS_VERIFICATION` 才跑，不装机就不跑
-- 由 `content://com.tcl.providers.config/InstallConfig` 下发的策略链控制，按 `priority 0→5` 执行，**第一条给出结论的策略就定局**
-- `launcherStrategy` 只对**声明了 `HOME` 的包**做判断，普通应用在这一层第一行就放行，走不到后面的 `pmStrategy`
-- 所以「某些 app 被禁止安装」通常指的是**桌面 / 启动器类** APK，而不是普通视频应用
-- `adb install` 走的是 shell 直接提交会话，**根本不触发这条 verifier**，这是它能装进去的真正原因
-- 这条链的配置本身有个坑：`config_content` 必须是**JSON 数组**，写成裸对象会导致整份策略静默失效（fail-open）。排查方法见 [踩坑记录](docs/PITFALLS.md)
+- The chain hangs off **PackageInstaller's verifier**: it only runs after `PACKAGE_NEEDS_VERIFICATION`, so it never runs unless you install something
+- It is driven by the policy chain served from `content://com.tcl.providers.config/InstallConfig`, executed by `priority 0→5`, and **the first strategy that returns a verdict wins**
+- `launcherStrategy` only judges **packages that declare `HOME`**; ordinary apps pass on the first line and never reach `pmStrategy`
+- So "some app refuses to install" almost always means a **launcher / home-screen** APK, not a normal video app
+- `adb install` submits the session straight from the shell and **never triggers this verifier** — that is the real reason it works
+- The config itself has a trap: `config_content` must be a **JSON array**; writing a bare object makes the whole chain fail open, silently. See the [pitfalls log](docs/PITFALLS.md)
 
-完整机制、源码级逻辑与实测证据见 [开发文档 §8](docs/DEVELOPMENT.md#8-背景oem-安装校验tcl-实测)。
+Full mechanism, source-level logic and measurement evidence: [development guide §8](docs/DEVELOPMENT.md#8-背景oem-安装校验tcl-实测).
 
-## 安全护栏
+## Safety guardrails
 
-- **桌面类拦截**：APK 声明 `android.intent.category.HOME` 时默认拒绝安装，需手动勾选「允许装桌面类」。防止误装第二个桌面导致开机弹选择框。
-- **关键包保护**：`com.android.systemui`、`com.tcl.cyberui`、`com.tcl.providers.config`、`com.android.packageinstaller` 等包的卸载 / 清数据请求会被直接拒绝。自己的桌面可以用 `protected_extra` 追加保护。
-- **文件操作白名单**：删除 / 改名 / 新建只允许在 `/sdcard`、`/storage`、`/mnt`、`/data/local/tmp` 下，`/system`、`/data/app` 一律拒绝。
-- **只监听本机**：默认 `127.0.0.1`。需要手机访问时在「设置」里开局域网，并用 6 位访问码鉴权（改完需重启服务）。
+- **Launcher-class block**: an APK declaring `android.intent.category.HOME` is rejected by default until you tick *Allow launcher-class APKs* — so you can't accidentally install a second launcher and end up with a home-screen picker at boot.
+- **Critical package protection**: uninstall / clear-data requests for `com.android.systemui`, `com.tcl.cyberui`, `com.tcl.providers.config`, `com.android.packageinstaller` and similar are refused outright. Add your own launcher to `protected_extra`.
+- **File operation allowlist**: delete / rename / mkdir only work under `/sdcard`, `/storage`, `/mnt`, `/data/local/tmp`; `/system` and `/data/app` are always refused.
+- **Loopback by default**: listens on `127.0.0.1`. To use it from a phone, enable LAN access under *Settings*; access is gated by a 6-digit code (restart the server after changing it).
 
-## 目录结构
+## Project layout
 
 ```
 tv-installer/
-├── server.py            HTTP 路由：静态页 + JSON API + SSE
-├── core.py              配置、adb/aapt 发现、设备信息、APK 解析
-├── channels.py          三条安装通道 + 错误码中文映射
-├── jobs.py              安装任务队列 + 事件总线（同一时刻只跑一个任务）
-├── make_icons.py        生成 PWA 图标（纯标准库画 PNG）
-├── ui/                  前端：index.html / app.css / app.js / manifest / sw.js / 图标
-├── docs/                开发文档、实施文档、路线图
-├── config.json          本地配置（首次运行自动生成，不入库）
-└── start.bat            Windows 启动脚本
+├── server.py            HTTP routing: static page + JSON API + SSE
+├── core.py              config, adb/aapt discovery, device info, APK parsing
+├── channels.py          the three install channels + error-code mapping
+├── jobs.py              install job queue + event bus (one job at a time)
+├── make_icons.py        generates the PWA icons (pure standard library PNG)
+├── ui/                  front end: index.html / app.css / app.js / manifest / sw.js / icons
+├── docs/                development, deployment and roadmap docs
+├── docs/screenshots/    README screenshots
+├── config.json          local config (generated on first run, not committed)
+└── start.bat            Windows launcher
 ```
 
 ## API
 
-所有接口都在 `http://127.0.0.1:8770` 下，请求和响应均为 JSON（下载接口除外）。
+Everything lives under `http://127.0.0.1:8770`, JSON in and out (except downloads).
 
-| 方法 | 路径 | 说明 |
+| Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/state` | adb / aapt 路径、设备列表与信息、设置、局域网地址 |
-| POST | `/api/connect` | `{ip, port}` 连接电视 |
-| POST | `/api/disconnect` | 断开当前连接 |
-| POST | `/api/settings` | 更新设置（IP、端口、通道、开关、adb 路径、`protected_extra`） |
-| POST | `/api/upload?name=x.apk` | 原始字节流上传 APK，返回解析结果 |
-| POST | `/api/inspect` | `{path, serial}` 解析本地 APK（包名、版本、中文名、是否 HOME、与已装版本对比） |
-| POST | `/api/install` | `{serial, apks:[路径], channel, allow_home, downgrade, grant}` |
-| POST | `/api/install-device` | `{serial, paths:[电视上的 APK]}` 直接装电视本地 APK |
-| POST | `/api/cancel` | 取消当前任务 |
-| GET | `/api/events` | SSE：实时日志 + 任务进度 |
-| GET | `/api/apps?serial=` | 第三方应用列表（含版本号、`protected` 标记） |
+| GET | `/api/state` | adb / aapt paths, device list and info, settings, LAN address |
+| POST | `/api/connect` | `{ip, port}` — connect to the TV |
+| POST | `/api/disconnect` | drop the current connection |
+| POST | `/api/settings` | update settings (IP, port, channel, switches, adb path, `protected_extra`) |
+| POST | `/api/upload?name=x.apk` | raw-byte APK upload, returns the parsed result |
+| POST | `/api/inspect` | `{path, serial}` — parse a local APK (package, version, label, HOME flag, comparison with the installed version) |
+| POST | `/api/install` | `{serial, apks:[paths], channel, allow_home, downgrade, grant}` |
+| POST | `/api/install-device` | `{serial, paths:[APKs on the TV]}` — install straight from the TV |
+| POST | `/api/cancel` | cancel the running job |
+| GET | `/api/events` | SSE: live log + job progress |
+| GET | `/api/apps?serial=` | third-party app list (version, `protected` flag) |
 | POST | `/api/app` | `{serial, package, action: launch\|stop\|clear\|uninstall}` |
-| GET | `/api/app/export?package=` | 把电视上的应用 APK 导到电脑 |
-| GET | `/api/files?path=/sdcard` | 目录列表 |
-| POST | `/api/files/{mkdir,rename,delete,upload}` | 文件操作（受白名单限制） |
-| GET | `/api/files/download?path=` | 下载文件 |
+| GET | `/api/app/export?package=` | pull the APK from the TV to your computer |
+| GET | `/api/files?path=/sdcard` | directory listing |
+| POST | `/api/files/{mkdir,rename,delete,upload}` | file operations (allowlisted) |
+| GET | `/api/files/download?path=` | download a file |
 
-## 配置
+## Configuration
 
-首次运行会在项目根目录生成 `config.json`：
+`config.json` is generated in the project root on first run:
 
 ```json
 {
@@ -147,47 +156,49 @@ tv-installer/
   "downgrade": false,
   "lan": false,
   "http_port": 8770,
-  "pin": "由程序随机生成",
+  "pin": "randomly generated",
   "protected_extra": []
 }
 ```
 
-| 键 | 说明 |
+| Key | Meaning |
 |---|---|
-| `adb` | adb 可执行文件路径，`null` 表示自动查找 |
+| `adb` | path to the adb executable, `null` = auto-detect |
 | `channel` | `auto` / `adb` / `tcast` / `pm` |
-| `auto_accept` | 多屏互动通道是否自动点电视上的「同意」 |
-| `allow_home` | 是否允许安装声明 HOME 的包 |
-| `grant` | 安装时是否加 `-g` 自动授予运行时权限 |
-| `downgrade` | 是否允许降级安装（`-d`） |
-| `lan` | 是否监听 `0.0.0.0` 供局域网（手机）访问 |
-| `pin` | 局域网访问码，首次运行自动生成 |
-| `protected_extra` | 额外保护、禁止卸载的包名数组 |
+| `auto_accept` | whether the Multi-Screen channel auto-taps *Allow* on the TV |
+| `allow_home` | allow installing packages that declare `HOME` |
+| `grant` | add `-g` to grant runtime permissions at install time |
+| `downgrade` | allow downgrade installs (`-d`) |
+| `lan` | listen on `0.0.0.0` so a phone on the same network can connect |
+| `pin` | LAN access code, generated on first run |
+| `protected_extra` | extra package names that may never be uninstalled |
 
-## 已知限制
+## Known limitations
 
-| 限制 | 说明 | 影响 |
+| Limitation | Detail | Impact |
 |---|---|---|
-| 缺 `aapt2` 时护栏失效 | 无法识别 `HOME` 声明，桌面类拦截静默放行 | ⚠️ 安全相关，务必装 |
-| 不内置 adb | 需本机已装 platform-tools，或在「设置」里指定路径 | 首次使用需准备 |
-| `tcast` 依赖多屏互动服务 | 需电视上 `com.tcl.MultiScreenInteraction_TV` 在运行，且电视不能深度休眠 | 先唤醒再推 |
-| 不支持分包 APK | `.apks` / split APK / `.xapk` 都不支持 | 部分商店提取包装不了 |
-| 应用列表无中文名 | 只显示包名；安装队列里才有中文名（来自 APK 自身） | 略影响辨认 |
-| 单设备、单任务 | 同一时刻只连一台电视、只跑一个安装任务 | 批量场景需排队 |
-| 局域网默认关闭 | 默认只监听 `127.0.0.1`，手机访问需在设置里开启并输入访问码 | 有意为之 |
+| No `aapt2` → no guardrail | `HOME` cannot be detected, so the launcher block fails open | ⚠️ security-relevant, please install it |
+| adb is not bundled | platform-tools must already exist, or be pointed to in *Settings* | one-time setup |
+| `tcast` needs the Multi-Screen service | requires `com.tcl.MultiScreenInteraction_TV` running and the TV not deeply asleep | wake the TV first |
+| No split APKs | `.apks` / split APK / `.xapk` are unsupported | some store-extracted bundles won't install |
+| No app labels in the app list | only package names; labels appear in the install queue (read from the APK itself) | slightly harder to identify apps |
+| Single device, single job | one TV and one install job at a time | batching means queueing |
+| LAN off by default | listens on `127.0.0.1`; phone access must be enabled and unlocked with the code | intentional |
 
-## 文档
+## Documentation
 
-| 文档 | 内容 | 适合谁读 |
+> The docs below are currently written in **Chinese**. The English README is kept in sync at the summary level; if anything is ambiguous, the Chinese docs are authoritative.
+
+| Document | Content | For whom |
 |---|---|---|
-| [开发文档](docs/DEVELOPMENT.md) | 架构、模块职责、线程模型、数据流、API 契约、OEM 校验机制、扩展指南 | 要改代码的人 |
-| [实施文档](docs/DEPLOYMENT.md) | 环境准备、部署、电视端配置、验收清单、排错手册、升级卸载 | 要部署 / 排查的人 |
-| [踩坑记录](docs/PITFALLS.md) | 开发与联调中真实踩过的坑，按「现象 → 根因 → 解决 → 教训」记录 | 遇到怪问题时先查这里 |
-| [路线图与已知问题](docs/ROADMAP.md) | 版本规划、已发现未修复的缺陷、已规划增强、同类项目调研 | 想知道「还缺什么」的人 |
-| [更新日志](CHANGELOG.md) | 每个版本改了什么 | 升级前看一眼 |
+| [Development guide](docs/DEVELOPMENT.md) | architecture, module responsibilities, threading model, data flow, API contracts, OEM install mechanism, extension guide | people changing the code |
+| [Deployment guide](docs/DEPLOYMENT.md) | environment setup, deployment, TV-side configuration, acceptance checklist, troubleshooting, upgrade/uninstall | people deploying or debugging it |
+| [Pitfalls](docs/PITFALLS.md) | real traps hit during development, recorded as *symptom → root cause → fix → lesson* | check here first when something is weird |
+| [Roadmap & known issues](docs/ROADMAP.md) | release plan, open defects, planned enhancements, survey of similar projects | people wondering "what's missing" |
+| [Changelog](CHANGELOG.md) | what changed in each release | read before upgrading |
 
-> 遇到「明明代码没改，行为却不对」的情况，先翻[踩坑记录](docs/PITFALLS.md)——里面有几条是**结论曾经写错、后来被实测推翻**的，包括 `aapt2` 缺失导致护栏失效、`InstallConfig` 格式写错导致校验整体失效、以及把 `tcast` 当成万能绕过。
+> If behaviour looks wrong even though you changed nothing, start with the [pitfalls log](docs/PITFALLS.md) — several entries are **conclusions that were later disproved by measurement**, including "missing `aapt2` disables the guardrail", "a malformed `InstallConfig` silently disables the whole chain", and "`tcast` bypasses everything".
 
-## 许可
+## License
 
 [MIT](LICENSE)
