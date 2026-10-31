@@ -12,6 +12,14 @@
 
 开源社区里的同类工具（couchkit、Android-TV-Desktop-Toolkit 等）本质都是**一条 `adb install` 走天下**。`adb` 这条路确实不经过上述校验，所以它们对普通应用够用；但一旦 adb 本身走不通——签名冲突、流式安装中断、电视端只开了厂商推送通道而没开网络调试、或者你手上只有手机——它们就没有任何退路。本项目内置三条安装通道并自动降级，把「完全装不上」压缩成「慢一点但能装上」。
 
+## 界面
+
+<p align="center"><img src="docs/screenshots/ui-install.png" alt="安装页：电视连接、拖拽 APK、安装方式" width="820"></p>
+
+<p align="center"><img src="docs/screenshots/ui-settings.png" alt="设置页：手机访问、默认参数、护栏开关" width="820"></p>
+
+> 截图是 `python server.py` 启动后的真实界面（1280 宽，未连接电视的空闲状态）。桌面与手机共用同一套页面，宽度低于 820px 时顶部标签栏会自动移到底部。
+
 ## 功能
 
 | 模块 | 能力 |
@@ -21,14 +29,6 @@
 | 应用 | 列出第三方应用（版本号、更新时间）、启动、强制停止、清数据、卸载、导出 APK 到电脑 |
 | 文件 | 浏览电视目录、上传、下载、重命名、删除、新建文件夹、**直接安装电视上已有的 APK** |
 | 设置 | 默认 IP / 端口 / 通道、adb 路径、自动点「同意」、允许装桌面类、局域网访问开关 |
-
-## 界面
-
-<p align="center"><img src="docs/screenshots/ui-install.png" alt="安装页：电视连接、拖拽 APK、安装方式" width="820"></p>
-
-<p align="center"><img src="docs/screenshots/ui-settings.png" alt="设置页：手机访问、默认参数、护栏开关" width="820"></p>
-
-> 截图是 `python server.py` 启动后的真实界面（1280 宽，未连接电视的空闲状态）。桌面与手机共用同一套页面，宽度低于 820px 时顶部标签栏会自动移到底部。
 
 ## 快速开始
 
