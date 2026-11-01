@@ -2,7 +2,7 @@
 
 [English](README.md) | **简体中文**
 
-在电脑上给 Android TV / 电视盒子装第三方应用的本地工具。启动一个网页界面，拖入 APK 即可安装，**零第三方依赖**（Python 3.8+ 标准库 + 系统里的 adb）。
+在电脑上给 Android TV / 电视盒子装第三方应用的本地工具。启动一个网页界面，拖入 APK 即可安装，**需要环境**（Python 3.8+ adb）。
 
 > A local web UI for sideloading APKs to Android TV over ADB, with automatic multi-channel fallback for OEM install restrictions (TCL / 雷鸟等).
 
