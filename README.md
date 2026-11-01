@@ -1,4 +1,4 @@
-# TV Installer
+# TV Installer（only TCL 65T6L ok）
 
 **English** | [简体中文](README.zh-CN.md)
 
