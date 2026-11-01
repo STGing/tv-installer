@@ -1,4 +1,4 @@
-# TV Installer
+# TV Installer(目前仅TCL 65T6L验证ok)
 
 [English](README.md) | **简体中文**
 
