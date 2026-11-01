@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-A local web UI for sideloading APKs onto Android TV and TV boxes. Start it, drag an APK onto the page, done — **zero third-party dependencies** (Python 3.8+ standard library plus the `adb` already on your machine).
+A local web UI for sideloading APKs onto Android TV and TV boxes. Start it, drag an APK onto the page, done — **dependencies** (Python 3.8+  `adb`).
 
 ## Why this exists
 
